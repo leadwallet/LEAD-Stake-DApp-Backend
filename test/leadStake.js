@@ -188,4 +188,40 @@ contract('LeadStake', (accounts) => {
         assert.equal(referralCount.toNumber(), 0);
         assert.equal(totalStaked.toNumber(), 1764);    
     });
+
+    it('Should set staking tax properly', async () => {
+        await leadStake.setStakingTaxRate(3);
+        const stakingTaxRate = await leadStake.stakingTaxRate();
+        assert.equal(stakingTaxRate.toNumber(), 3); 
+    });
+
+    it('Should set unstaking tax properly', async () => {
+        await leadStake.setUnstakingTaxRate(5);
+        const unstakingTaxRate = await leadStake.unstakingTaxRate();
+        assert.equal(unstakingTaxRate.toNumber(), 5); 
+    });
+
+    it('Should set monthly ROI properly', async () => {
+        await leadStake.setMonthlyROI(15);
+        const monthlyROI = await leadStake.monthlyROI();
+        assert.equal(monthlyROI.toNumber(), 15); 
+    });
+
+    it('Should set registration tax properly', async () => {
+        await leadStake.setRegistrationTax(500);
+        const registrationTax = await leadStake.registrationTax();
+        assert.equal(registrationTax.toNumber(), 500); 
+    });
+
+    it('Should set referral tax allocation properly', async () => {
+        await leadStake.setReferralTaxAllocation(55);
+        const referralTaxAllocation = await leadStake.referralTaxAllocation();
+        assert.equal(referralTaxAllocation.toNumber(), 55); 
+    });
+
+    it('Should set minimum stake value properly', async () => {
+        await leadStake.setMinimumStakeValue(1500);
+        const minimumStakeValue = await leadStake.minimumStakeValue();
+        assert.equal(minimumStakeValue.toNumber(), 1500); 
+    });
 }); 
