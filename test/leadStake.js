@@ -1,4 +1,5 @@
 const { expectRevert, time } = require('@openzeppelin/test-helpers');
+const { times } = require('lodash');
 const LeadStake = artifacts.require('LeadStake');
 const ERC20 = artifacts.require('ERC20');
 
@@ -14,7 +15,6 @@ contract('LeadStake', (accounts) => {
         await erc20.approve(leadStake.address, 100000000);
         await erc20.transfer(stakeholder1, 10000);
         await erc20.transfer(stakeholder2, 10000);
-        await erc20.transfer(stakeholder3, 10000);
     });
 
     it('Should transfer a balance of 10 tokens to smart contract properly', async () => {
@@ -77,6 +77,7 @@ contract('LeadStake', (accounts) => {
     });
 
     it('Should NOT create a stake if amount is below the minimum staking value', async () => {
+        await time.increase(604800);
         await expectRevert(
             leadStake.stake(200, {from: stakeholder1}),
             "Amount is below minimum stake value."
@@ -90,84 +91,72 @@ contract('LeadStake', (accounts) => {
         );
     });
 
+    it('Should calculate earnings properly', async () => {
+        await time.increase(3196800);
+        const reward1 = await leadStake.calculateEarnings(stakeholder1);
+        const reward2 = await leadStake.calculateEarnings(stakeholder2);
+        assert.equal(reward1.toNumber(), 411);
+        assert.equal(reward2.toNumber(), 740);
+    });
+
     it('Should create a stake properly', async () => {
         await erc20.approve(leadStake.address, 1000, {from: stakeholder1});
         await leadStake.stake(1000, {from: stakeholder1});
         const stakes = await leadStake.stakes(stakeholder1);
+        const stakeRewards = await leadStake.stakeRewards(stakeholder1);
         const totalStaked = await leadStake.totalStaked();
         assert.equal(stakes.toNumber(), 1960);
+        assert.equal(stakeRewards.toNumber(), 411);
         assert.equal(totalStaked.toNumber(), 3724);
     });
 
-    it('Should NOT distribute rewards if non-owner', async () => {
-        await expectRevert(
-            leadStake.distribute({from: stakeholder2}),
-            "Ownable: caller is not the owner"
+    it('Should NOT stake below one week of previous stake', async () => {
+        await expectRevert.unspecified(
+                leadStake.stake(1960, {from: stakeholder1})
         );
     });
 
-    it('Should distribute rewards properly', async () => {
-        await leadStake.distribute();
-        const stakeRewardsForStakeholder1 = await leadStake.stakeRewards(stakeholder1);
-        const stakeRewardsForStakeholder2 = await leadStake.stakeRewards(stakeholder2);
-        const stakeRewardsForStakeholder3 = await leadStake.stakeRewards(stakeholder3);
-        assert.equal(stakeRewardsForStakeholder1.toNumber(), 588);
-        assert.equal(stakeRewardsForStakeholder2.toNumber(), 559);
-        assert.equal(stakeRewardsForStakeholder3.toNumber(), 0);    //Should have been 30 instead of 0. But since stakehoder3 isn't registerred, funds wouldn't be disbursed
-    });
-
-    it('Should NOT withdraw for non-registered users', async () => {
+    it('Should NOT ustake if not registered', async () => {
         await expectRevert(
-        leadStake.withdrawEarnings({from: stakeholder3}),
+            leadStake.unstake(200, {from: stakeholder3}),
             "Staker must be registered"
         );
     });
 
-    it('Should withdraw properly for registered users', async () => {
-        await leadStake.withdrawEarnings({from: stakeholder2});
-        const stakeRewards = await leadStake.stakeRewards(stakeholder2);
-        const referralRewards = await leadStake.referralRewards(stakeholder2);
-        const referralCount = await leadStake.referralCount(stakeholder2);
-        assert.equal(stakeRewards.toNumber(), 0);
-        assert.equal(referralRewards.toNumber(), 0);
-        assert.equal(referralCount.toNumber(), 0);
-    });
-
-    it('Should NOT withdraw if zero rewards', async () => {
+    it('Should NOT unstake below one week', async () => {
         await expectRevert(
-        leadStake.withdrawEarnings({from: stakeholder2}),
-            "No reward to withdraw"
-        );
-    });
-
-    it('Should NOT ustake without registration', async () => {
-        await expectRevert(
-        leadStake.stake(2000, {from: stakeholder3}),
-            "Staker must be registered"
+                leadStake.unstake(1960, {from: stakeholder1}),
+                "Must wait for 7 days at least"
         );
     });
 
     it('Should NOT unstake above stake balance', async () => {
+        await time.increase(604800);
         await expectRevert(
-        leadStake.unstake(1961, {from: stakeholder1}),
+            leadStake.unstake(1961, {from: stakeholder1}),
             "Insufficient balance to unstake"
         );
     });
 
     it('Should unstake properly', async () => {
+        await time.increase(604800);
         await leadStake.unstake(980, {from: stakeholder1});
         const stakes = await leadStake.stakes(stakeholder1);
+        const stakeRewards = await leadStake.stakeRewards(stakeholder1);
         const referralRewards = await leadStake.referralRewards(stakeholder1);
         const referralCount = await leadStake.referralCount(stakeholder1);
         const totalStaked = await leadStake.totalStaked();
+        const balance = await erc20.balanceOf(stakeholder1);
         assert.equal(stakes.toNumber(), 980);
+        assert.equal(stakeRewards.toNumber(), 0);
         assert.equal(referralRewards.toNumber(), 0);
         assert.equal(referralCount.toNumber(), 0);
         assert.equal(totalStaked.toNumber(), 2744);
-        
+        assert.equal(balance.toNumber(), 9426);
     });
 
-    it('Should deregister user who unstakes total stakes', async () => {
+    it('Should deregister stakeholder who unstakes total stakes', async () => {
+        await time.increase(604800);
         await leadStake.unstake(980, {from: stakeholder1});
         const stakes = await leadStake.stakes(stakeholder1);
         const referralRewards = await leadStake.referralRewards(stakeholder1);
@@ -189,6 +178,30 @@ contract('LeadStake', (accounts) => {
         assert.equal(totalStaked.toNumber(), 1764);    
     });
 
+    it('Should NOT withdraw for non-registered users', async () => {
+        await expectRevert(
+        leadStake.withdrawEarnings({from: stakeholder3}),
+            "Staker must be registered"
+        );
+    });
+
+    it('Should withdraw properly for registered users', async () => {
+        await leadStake.withdrawEarnings({from: stakeholder2});
+        const stakeRewards = await leadStake.stakeRewards(stakeholder2);
+        const referralRewards = await leadStake.referralRewards(stakeholder2);
+        const referralCount = await leadStake.referralCount(stakeholder2);
+        assert.equal(stakeRewards.toNumber(), 0);
+        assert.equal(referralRewards.toNumber(), 0);
+        assert.equal(referralCount.toNumber(), 0);
+    });
+
+    it('Should NOT withdraw if below one week interval', async () => {
+        await expectRevert(
+            leadStake.withdrawEarnings({from: stakeholder2}),
+            "Must wait for 7 days at least"
+        );
+    });
+
     it('Should set staking tax properly', async () => {
         await leadStake.setStakingTaxRate(3);
         const stakingTaxRate = await leadStake.stakingTaxRate();
@@ -201,10 +214,13 @@ contract('LeadStake', (accounts) => {
         assert.equal(unstakingTaxRate.toNumber(), 5); 
     });
 
-    it('Should set monthly ROI properly', async () => {
-        await leadStake.setMonthlyROI(15);
-        const monthlyROI = await leadStake.monthlyROI();
-        assert.equal(monthlyROI.toNumber(), 15); 
+    it('Should set weekly ROI properly', async () => {
+        await time.increase(604800);
+        await leadStake.setweeklyROI(5);
+        const weeklyROI = await leadStake.weeklyROI();
+        const rewards = await leadStake.stakeRewards(stakeholder2);
+        assert.equal(weeklyROI.toNumber(), 5); 
+        assert.equal(rewards.toNumber(), 123); 
     });
 
     it('Should set registration tax properly', async () => {
@@ -224,4 +240,32 @@ contract('LeadStake', (accounts) => {
         const minimumStakeValue = await leadStake.minimumStakeValue();
         assert.equal(minimumStakeValue.toNumber(), 1500); 
     });
+
+    it('Should withdraw funds from owner properly', async () => {
+        await leadStake.adminWithdraw(stakeholder3, 330);
+        const balance = await erc20.balanceOf(stakeholder3);
+        assert.equal(balance.toNumber(), 330); 
+    });
+
+    it('Should supply to the pool properly', async () => {
+        const balance1 = await erc20.balanceOf(leadStake.address);
+        await leadStake.supplyPool();
+        const balance2 = await erc20.balanceOf(leadStake.address);
+        assert(balance2.toNumber() > balance1.toNumber());
+    });
+
+    it('Should NOT supply pool if non-owner', async () => {
+        await expectRevert(
+            leadStake.supplyPool({from: stakeholder3}),
+            "Ownable: caller is not the owner"
+        );
+    });
+
+    it('Should NOT supply if pool has enough tokens', async () => {
+        await expectRevert(
+            leadStake.supplyPool(),
+            "Still have enough pool reserve" 
+        );
+    });
+
 }); 
