@@ -242,7 +242,7 @@ contract LeadStake is Ownable {
         }
     }
     
-    //transfers total active earnng to stakeholders wallett
+    //transfers total active earnng to stakeholders wallet
     function withdrawEarnings() external onlyRegistered() {
         //makes sure the time interval between the last payout time and now is up to 1 week
         require(now.sub(lastClock[msg.sender]) >= 604800, 'Must wait for 7 days at least');

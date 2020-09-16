@@ -100,4 +100,3 @@ contract ERC20 is IERC20 {
         emit Transfer(address(0), _account, _amount);
     }
 }
-
