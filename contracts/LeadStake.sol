@@ -18,15 +18,13 @@ contract LeadStake is Ownable {
     //total amount of staked lead
     uint public totalStaked;
     //tax rate for staking in percentage
-    uint public stakingTaxRate;
+    uint public stakingTaxRate;                     //10 = 1%
     //tax amount for registration
     uint public registrationTax;
     //daily return of investment in percentage
-    uint8 public weeklyROI;
-    //total amount of LEAD distributed
-    uint public totalDistributed;
-    //tax rate for unstaking in percentage
-    uint public unstakingTaxRate;
+    uint8 public dailyROI;                         //100 = 1%
+    //tax rate for unstaking in percentage 
+    uint public unstakingTaxRate;                   //10 = 1%
     //minimum stakeable LEAD 
     uint public minimumStakeValue;
     //referral allocation from the registration tax
@@ -60,7 +58,7 @@ contract LeadStake is Ownable {
         address _token,
         uint8 _stakingTaxRate, 
         uint8 _unstakingTaxRate,
-        uint8 _weeklyROI,
+        uint8 _dailyROI,
         uint _registrationTax,
         uint _referralTaxAllocation,
         uint _minimumStakeValue) public {
@@ -69,7 +67,7 @@ contract LeadStake is Ownable {
         lead = _token;
         stakingTaxRate = _stakingTaxRate;
         unstakingTaxRate = _unstakingTaxRate;
-        weeklyROI = _weeklyROI;
+        dailyROI = _dailyROI;
         registrationTax = _registrationTax;
         referralTaxAllocation = _referralTaxAllocation;
         minimumStakeValue = _minimumStakeValue;
@@ -108,7 +106,7 @@ contract LeadStake is Ownable {
         //calculates final amount after deducting registration tax
         uint finalAmount = _amount.sub(registrationTax);
         //calculates staking tax on final calculated amount
-        uint stakingTax = (stakingTaxRate.mul(finalAmount)).div(100);
+        uint stakingTax = (stakingTaxRate.mul(finalAmount)).div(1000);
         //conditional statement if user registers with referrer 
         if(_referrer != address(0x0)) {
             //increase referral count of referrer
@@ -131,10 +129,10 @@ contract LeadStake is Ownable {
     
     //calculates stakeholders latest unclaimed earnings 
     function calculateEarnings(address _stakeholder) public view returns(uint) {
-        //records the number of weeks between the last payout time and now
-        uint activeWeeks = (now.sub(lastClock[_stakeholder])).div(604800);
+        //records the number of days between the last payout time and now
+        uint activeDays = (now.sub(lastClock[_stakeholder])).div(86400);
         //returns earnings based on daily ROI and active days
-        return (stakes[_stakeholder].mul(weeklyROI).mul(activeWeeks)).div(100);
+        return (stakes[_stakeholder].mul(dailyROI).mul(activeDays)).div(10000);
     }
     
     /**
@@ -145,8 +143,6 @@ contract LeadStake is Ownable {
      * Emits an {OnStake} event
      */
     function stake(uint _amount) external onlyRegistered() {
-        //makes sure the time interval between the last payout time and now is up to 1 week
-        require(now.sub(lastClock[msg.sender]) >= 604800, 'Must wait for 7 days at least');
         //makes sure stakeholder does not stake below the minimum
         require(_amount >= minimumStakeValue, "Amount is below minimum stake value.");
         //makes sure stakeholder has enough balance
@@ -154,15 +150,17 @@ contract LeadStake is Ownable {
         //makes sure smart contract transfers LEAD from user
         require(IERC20(lead).transferFrom(msg.sender, address(this), _amount), "Stake failed due to failed amount transfer.");
         //calculates staking tax on amount
-        uint stakingTax = (stakingTaxRate.mul(_amount)).div(100);
+        uint stakingTax = (stakingTaxRate.mul(_amount)).div(1000);
         //calculates amount after tax
         uint afterTax = _amount.sub(stakingTax);
         //update the total staked LEAD amount in the pool
         totalStaked = totalStaked.add(afterTax);
         //adds earnings current earnings to stakeRewards
         stakeRewards[msg.sender] = stakeRewards[msg.sender].add(calculateEarnings(msg.sender));
-        //mark transaction date
-        lastClock[msg.sender] = now;
+        //calculates unpaid period
+        uint remainder = (now.sub(lastClock[msg.sender])).mod(86400);
+        //mark transaction date with remainder
+        lastClock[msg.sender] = now.sub(remainder);
         //updates stakeholder's stakes
         stakes[msg.sender] = stakes[msg.sender].add(afterTax);
         //emit event
@@ -178,28 +176,28 @@ contract LeadStake is Ownable {
      * Emits an {OnStake} event
      */
     function unstake(uint _amount) external onlyRegistered() {
-        //makes sure the time interval between the last payout time and now is up to 1 week
-        require(now.sub(lastClock[msg.sender]) >= 604800, 'Must wait for 7 days at least');
         //makes sure _amount is not more than stake balance
         require(_amount <= stakes[msg.sender], 'Insufficient balance to unstake');
         //calculates unstaking tax
-        uint unstakingTax = (unstakingTaxRate.mul(_amount)).div(100);
+        uint unstakingTax = (unstakingTaxRate.mul(_amount)).div(1000);
         //calculates amount after tax
         uint afterTax = _amount.sub(unstakingTax);
         //sums up stakeholder's total rewards with _amount deducting unstaking tax
         uint unstakePlusAllEarnings = stakeRewards[msg.sender].add(referralRewards[msg.sender]).add(afterTax).add(calculateEarnings(msg.sender));
         //transfers value to stakeholder
         IERC20(lead).transfer(msg.sender, unstakePlusAllEarnings);
-        //initializes stake rewards
-        stakeRewards[msg.sender] = 0;
         //updates stakes
         stakes[msg.sender] = stakes[msg.sender].sub(_amount);
+        //initializes stake rewards
+        stakeRewards[msg.sender] = 0;
         //initializes referral rewards
         referralRewards[msg.sender] = 0;
         //initializes referral count
         referralCount[msg.sender] = 0;
-        //mark transaction date 
-        lastClock[msg.sender] = now;
+        //calculates unpaid period
+        uint remainder = (now.sub(lastClock[msg.sender])).mod(86400);
+        //mark transaction date with remainder
+        lastClock[msg.sender] = now.sub(remainder);
         //update the total staked LEAD amount in the pool
         totalStaked = totalStaked.sub(_amount);
         //conditional statement if stakeholder has no stake left
@@ -241,11 +239,9 @@ contract LeadStake is Ownable {
             stakeholders.pop();
         }
     }
-    
-    //transfers total active earnng to stakeholders wallet
+
+    //transfers total active earnng to stakeholders wallett
     function withdrawEarnings() external onlyRegistered() {
-        //makes sure the time interval between the last payout time and now is up to 1 week
-        require(now.sub(lastClock[msg.sender]) >= 604800, 'Must wait for 7 days at least');
         //calculates the total redeemable rewards
         uint totalReward = referralRewards[msg.sender].add(stakeRewards[msg.sender]).add(calculateEarnings(msg.sender));
         //makes sure user has rewards to withdraw before execution
@@ -258,8 +254,10 @@ contract LeadStake is Ownable {
         referralRewards[msg.sender] = 0;
         //initializes referral count
         referralCount[msg.sender] = 0;
-        //registers transaction date
-        lastClock[msg.sender] = now;
+        //calculates unpaid period
+        uint remainder = (now.sub(lastClock[msg.sender])).mod(86400);
+        //mark transaction date with remainder
+        lastClock[msg.sender] = now.sub(remainder);
         //emit event
         emit OnWithdrawal(msg.sender, totalReward);
     }
@@ -268,21 +266,23 @@ contract LeadStake is Ownable {
     function setStakingTaxRate(uint8 _stakingTaxRate) external onlyOwner() {
         stakingTaxRate = _stakingTaxRate;
     }
-    
+
     //sets the unstaking rate
     function setUnstakingTaxRate(uint8 _unstakingTaxRate) external onlyOwner() {
         unstakingTaxRate = _unstakingTaxRate;
     }
     
-    //sets the weekly ROI
-    function setweeklyROI(uint8 _weeklyROI) external onlyOwner() {
+    //sets the daily ROI
+    function setDailyROI(uint8 _dailyROI) external onlyOwner() {
         for(uint i = 0; i < stakeholders.length; i++){
             //registers all previous earnings
             stakeRewards[stakeholders[i]] = stakeRewards[stakeholders[i]].add(calculateEarnings(stakeholders[i]));
-            //logs transaction time
-            lastClock[stakeholders[i]] = now;
+            //calculates unpaid period
+            uint remainder = (now.sub(lastClock[stakeholders[i]])).mod(86400);
+            //mark transaction date with remainder
+            lastClock[stakeholders[i]] = now.sub(remainder);
         }
-        weeklyROI = _weeklyROI;
+        dailyROI = _dailyROI;
     }
     
     //sets the registration tax
@@ -309,7 +309,7 @@ contract LeadStake is Ownable {
         //emit event
         emit OnWithdrawal(_address, _amount);
     }
-    
+
     //supplies LEAD from 'owner' to smart contract if pool balance runs dry
     function supplyPool() external onlyOwner() {
         //total balance that can be claimed in the pool
@@ -319,10 +319,10 @@ contract LeadStake is Ownable {
             //sum up all redeemable LEAD
             totalClaimable = stakeRewards[stakeholders[i]].add(referralRewards[stakeholders[i]]).add(stakes[stakeholders[i]]).add(calculateEarnings(stakeholders[i]));
         }
-        //calculate difference
-        uint difference = totalClaimable.sub(IERC20(lead).balanceOf(address(this)));
         //makes sure the pool dept is higher than balance
         require(totalClaimable > IERC20(lead).balanceOf(address(this)), 'Still have enough pool reserve');
+        //calculate difference
+        uint difference = totalClaimable.sub(IERC20(lead).balanceOf(address(this)));
         //makes sure 'owner' has enough balance
         require(IERC20(lead).balanceOf(msg.sender) >= difference, 'Insufficient LEAD balance in owner wallet');
         //transfers LEAD from 'owner' to smart contract to make up for dept
@@ -330,5 +330,4 @@ contract LeadStake is Ownable {
         //emits event
         emit OnDeposit(msg.sender, difference, now);
     }
-    
 }
