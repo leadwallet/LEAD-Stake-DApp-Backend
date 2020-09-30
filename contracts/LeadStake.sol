@@ -29,8 +29,12 @@ contract LeadStake is Ownable {
     uint public minimumStakeValue;
     //referral allocation from the registration tax
     uint public referralTaxAllocation;
-    //list of stakeholders' addresses
-    address[] public stakeholders;
+    //stakeholders' indexes
+    uint index;
+    //pause mechanism
+    bool active = true;
+    //mapping of stakeholders' indexes to addresses
+    mapping(uint => address) public userIndex;
     //mapping of stakeholders' address to number of stakes
     mapping(address => uint) public stakes;
     //mapping of stakeholders' address to stake rewards
@@ -84,6 +88,12 @@ contract LeadStake is Ownable {
         require(registered[msg.sender] == false, "Staker is already registered");
         _;
     }
+        
+    //make sure contract is active
+    modifier whenActive() {
+        require(active == true, "Smart contract is curently inactive");
+        _;
+    }
     
     /**
      * registers and creates stakes for new stakeholders
@@ -92,9 +102,11 @@ contract LeadStake is Ownable {
      * transfers LEAD from sender's address into the smart contract
      * Emits an {OnRegisterAndStake} event..
      */
-    function registerAndStake(uint _amount, address _referrer) external onlyUnregistered() {
+    function registerAndStake(uint _amount, address _referrer) external onlyUnregistered() whenActive() {
         //makes sure user is not the referrer
         require(msg.sender != _referrer, "Cannot refer self");
+        //makes sure referrer is registered already
+        require(registered[_referrer] || address(0x0) == _referrer, "Referrer must be registered");
         //makes sure user has enough amount
         require(IERC20(lead).balanceOf(msg.sender) >= _amount, "Must have enough balance to stake");
         //makes sure smart contract transfers LEAD from user
@@ -120,7 +132,8 @@ contract LeadStake is Ownable {
         totalStaked = totalStaked.add(finalAmount).sub(stakingTax);
         //register user and add to stakeholders list
         registered[msg.sender] = true;
-        stakeholders.push(msg.sender);
+        userIndex[index] = msg.sender;
+        index++;
         //mark the transaction date
         lastClock[msg.sender] = now;
         //emit event
@@ -142,7 +155,7 @@ contract LeadStake is Ownable {
      * records the previous earnings before updated stakes 
      * Emits an {OnStake} event
      */
-    function stake(uint _amount) external onlyRegistered() {
+    function stake(uint _amount) external onlyRegistered() whenActive() {
         //makes sure stakeholder does not stake below the minimum
         require(_amount >= minimumStakeValue, "Amount is below minimum stake value.");
         //makes sure stakeholder has enough balance
@@ -177,7 +190,7 @@ contract LeadStake is Ownable {
      */
     function unstake(uint _amount) external onlyRegistered() {
         //makes sure _amount is not more than stake balance
-        require(_amount <= stakes[msg.sender], 'Insufficient balance to unstake');
+        require(_amount <= stakes[msg.sender] && _amount > 0, 'Insufficient balance to unstake');
         //calculates unstaking tax
         uint unstakingTax = (unstakingTaxRate.mul(_amount)).div(1000);
         //calculates amount after tax
@@ -215,9 +228,9 @@ contract LeadStake is Ownable {
      */
     function isStakeholder(address _address) public view returns(bool, uint) {
         //loops through the stakeholders list
-        for (uint i = 0; i < stakeholders.length; i += 1){
+        for (uint i = 0; i < index; i += 1){
             //conditional statement if address is stakeholder
-            if (_address == stakeholders[i]) {
+            if (_address == userIndex[i]) {
                 //returns true and list id
                 return (true, i);
             }
@@ -233,15 +246,12 @@ contract LeadStake is Ownable {
         //identify stakeholder in the stakeholders list
         (bool _isStakeholder, uint i) = isStakeholder(_stakeholder);
         if(_isStakeholder){
-            //transfer stakeholdeer to last id in the list
-            stakeholders[i] = stakeholders[stakeholders.length - 1];
-            //delete last id of the list
-            stakeholders.pop();
+            delete userIndex[i];
         }
     }
 
     //transfers total active earnng to stakeholders wallett
-    function withdrawEarnings() external onlyRegistered() {
+    function withdrawEarnings() external onlyRegistered() whenActive() {
         //calculates the total redeemable rewards
         uint totalReward = referralRewards[msg.sender].add(stakeRewards[msg.sender]).add(calculateEarnings(msg.sender));
         //makes sure user has rewards to withdraw before execution
@@ -262,6 +272,14 @@ contract LeadStake is Ownable {
         emit OnWithdrawal(msg.sender, totalReward);
     }
 
+    function changeActiveStatus() external onlyOwner() {
+        if(active = true) {
+            active == false;
+        } else {
+            active == true;
+        }
+    }
+    
     //sets the staking rate
     function setStakingTaxRate(uint8 _stakingTaxRate) external onlyOwner() {
         stakingTaxRate = _stakingTaxRate;
@@ -274,13 +292,13 @@ contract LeadStake is Ownable {
     
     //sets the daily ROI
     function setDailyROI(uint8 _dailyROI) external onlyOwner() {
-        for(uint i = 0; i < stakeholders.length; i++){
+        for(uint i = 0; i < index; i++){
             //registers all previous earnings
-            stakeRewards[stakeholders[i]] = stakeRewards[stakeholders[i]].add(calculateEarnings(stakeholders[i]));
+            stakeRewards[userIndex[i]] = stakeRewards[userIndex[i]].add(calculateEarnings(userIndex[i]));
             //calculates unpaid period
-            uint remainder = (now.sub(lastClock[stakeholders[i]])).mod(86400);
+            uint remainder = (now.sub(lastClock[userIndex[i]])).mod(86400);
             //mark transaction date with remainder
-            lastClock[stakeholders[i]] = now.sub(remainder);
+            lastClock[userIndex[i]] = now.sub(remainder);
         }
         dailyROI = _dailyROI;
     }
@@ -303,7 +321,7 @@ contract LeadStake is Ownable {
     //withdraws _amount from the pool to _address
     function adminWithdraw(address _address, uint _amount) external onlyOwner {
         //makes sure _amount is not more than smart contract balance
-        require(IERC20(lead).balanceOf(msg.sender) >= _amount, 'Insufficient LEAD balance in smart contract');
+        require(IERC20(lead).balanceOf(address(this)) >= _amount, 'Insufficient LEAD balance in smart contract');
         //transfers _amount to _address
         IERC20(lead).transfer(_address, _amount);
         //emit event
@@ -315,9 +333,9 @@ contract LeadStake is Ownable {
         //total balance that can be claimed in the pool
         uint totalClaimable;
         //loop through stakeholders' list
-        for(uint i = 0; i < stakeholders.length; i++){
+        for(uint i = 0; i < index; i++){
             //sum up all redeemable LEAD
-            totalClaimable = stakeRewards[stakeholders[i]].add(referralRewards[stakeholders[i]]).add(stakes[stakeholders[i]]).add(calculateEarnings(stakeholders[i]));
+            totalClaimable = stakeRewards[userIndex[i]].add(referralRewards[userIndex[i]]).add(stakes[userIndex[i]]).add(calculateEarnings(userIndex[i]));
         }
         //makes sure the pool dept is higher than balance
         require(totalClaimable > IERC20(lead).balanceOf(address(this)), 'Still have enough pool reserve');

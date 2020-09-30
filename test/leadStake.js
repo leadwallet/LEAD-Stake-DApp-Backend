@@ -30,33 +30,24 @@ contract('LeadStake', (accounts) => {
 
     it('Should register a stakeholder properly', async () => {
         await erc20.approve(leadStake.address, 1200, {from: stakeholder1});
-        await leadStake.registerAndStake(1200, stakeholder2, {from: stakeholder1});
+        await leadStake.registerAndStake(1200, '0x0000000000000000000000000000000000000000', {from: stakeholder1});
         await erc20.approve(leadStake.address, 2000, {from: stakeholder2});
-        await leadStake.registerAndStake(2000, stakeholder3, {from: stakeholder2});
+        await leadStake.registerAndStake(2000, stakeholder1, {from: stakeholder2});
         const status1 = await leadStake.registered(stakeholder1);
         const status2 = await leadStake.registered(stakeholder2);
-        const referralCount2 = await leadStake.referralCount(stakeholder2);
+        const referralCount1 = await leadStake.referralCount(stakeholder1);
         const referralCount3 = await leadStake.referralCount(stakeholder3);
-        const referralBonus2 = await leadStake.referralRewards(stakeholder2);
+        const referralBonus1 = await leadStake.referralRewards(stakeholder1);
         const referralBonus3 = await leadStake.referralRewards(stakeholder3);
         const stakes1 = await leadStake.stakes(stakeholder1);
         const stakes2 = await leadStake.stakes(stakeholder2);
         const totalStaked = await leadStake.totalStaked();
-        const stakeholders = await leadStake.stakeholders;
-
-        for(i = 0; i < stakeholders.length; i+1) {
-            let isStakeholder = false;
-            if(stakeholders[i] = stakeholder1 && stakeholder2) {
-                isStakeholder = true;
-            }
-            assert.equal(isStakeholder, true);
-        }
         assert.equal(status1, true);
         assert.equal(status2, true);
-        assert.equal(referralCount2.toNumber(), 1);
-        assert.equal(referralCount3.toNumber(), 1);
-        assert.equal(referralBonus2.toNumber(), 100);
-        assert.equal(referralBonus3.toNumber(), 100);
+        assert.equal(referralCount1.toNumber(), 1);
+        assert.equal(referralCount3.toNumber(), 0);
+        assert.equal(referralBonus1.toNumber(), 100);
+        assert.equal(referralBonus3.toNumber(), 0);
         assert.equal(stakes1.toNumber(), 980);
         assert.equal(stakes2.toNumber(), 1764);
         assert.equal(totalStaked.toNumber(), 2744);
@@ -137,7 +128,7 @@ contract('LeadStake', (accounts) => {
         assert.equal(referralRewards.toNumber(), 0);
         assert.equal(referralCount.toNumber(), 0);
         assert.equal(totalStaked.toNumber(), 2744);
-        assert.equal(balance.toNumber(), 8894);
+        assert.equal(balance.toNumber(), 8994);
     });
 
     it('Should deregister stakeholder who unstakes total stakes', async () => {
@@ -147,15 +138,8 @@ contract('LeadStake', (accounts) => {
         const referralRewards = await leadStake.referralRewards(stakeholder1);
         const referralCount = await leadStake.referralCount(stakeholder1);
         const totalStaked = await leadStake.totalStaked();
-        const stakeholders = await leadStake.stakeholders;
         const status = await leadStake.registered(stakeholder1);
-        for(i = 0; i < stakeholders.length; i+1) {
-            let isStakeholder = true;
-            if(stakeholders[i] !== stakeholder1) {
-                isStakeholder = false;
-            }
-            assert.equal(isStakeholder, false);
-        }
+        
         assert.equal(status, false);
         assert.equal(stakes.toNumber(), 0);
         assert.equal(referralRewards.toNumber(), 0);
@@ -180,7 +164,7 @@ contract('LeadStake', (accounts) => {
         assert.equal(stakeRewards.toNumber(), 0);
         assert.equal(referralRewards.toNumber(), 0);
         assert.equal(referralCount.toNumber(), 0);
-        assert.equal(balance.toNumber(), 8377);
+        assert.equal(balance.toNumber(), 8277);
 
         await time.increase(89400);
         const reward = await leadStake.calculateEarnings(stakeholder2);
