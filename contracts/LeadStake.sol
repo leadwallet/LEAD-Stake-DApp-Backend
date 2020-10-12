@@ -68,15 +68,6 @@ contract LeadStake is Owned {
     
     //initializing safe computations
     using SafeMath for uint;
-    
-    struct Stakeholder {
-        uint stakes;
-        uint referralCount;
-        uint referralRewards;
-        uint stakeRewards;
-        uint lastClock;
-        bool registered;
-    }
 
     //LEAD contract address
     address public lead;
@@ -95,8 +86,13 @@ contract LeadStake is Owned {
     //pause mechanism
     bool public active = true;
     
-    //mapping of stakeholder's addresses to struct
-    mapping(address => Stakeholder) public stakeholders;
+    //mapping of stakeholder's addresses to data
+    mapping(address => uint) public stakes;
+    mapping(address => uint) public referralRewards;
+    mapping(address => uint) public referralCount;
+    mapping(address => uint) public stakeRewards;
+    mapping(address => uint) private lastClock;
+    mapping(address => bool) public registered;
     
     //Events
     event OnWithdrawal(address sender, uint amount);
@@ -126,13 +122,13 @@ contract LeadStake is Owned {
     
     //exclusive access for registered address
     modifier onlyRegistered() {
-        require(stakeholders[msg.sender].registered == true, "Stakeholder must be registered");
+        require(registered[msg.sender] == true, "Stakeholder must be registered");
         _;
     }
     
     //exclusive access for unregistered address
     modifier onlyUnregistered() {
-        require(stakeholders[msg.sender].registered == false, "Stakeholder is already registered");
+        require(registered[msg.sender] == false, "Stakeholder is already registered");
         _;
     }
         
@@ -153,7 +149,7 @@ contract LeadStake is Owned {
         //makes sure user is not the referrer
         require(msg.sender != _referrer, "Cannot refer self");
         //makes sure referrer is registered already
-        require(stakeholders[_referrer].registered || address(0x0) == _referrer, "Referrer must be registered");
+        require(registered[_referrer] || address(0x0) == _referrer, "Referrer must be registered");
         //makes sure user has enough amount
         require(IERC20(lead).balanceOf(msg.sender) >= _amount, "Must have enough balance to stake");
         //makes sure amount is more than the registration fee and the minimum deposit
@@ -167,18 +163,18 @@ contract LeadStake is Owned {
         //conditional statement if user registers with referrer 
         if(_referrer != address(0x0)) {
             //increase referral count of referrer
-            stakeholders[_referrer].referralCount++;
+            referralCount[_referrer]++;
             //add referral bonus to referrer
-            stakeholders[_referrer].referralRewards = (stakeholders[_referrer].referralRewards).add(stakingTax);
+            referralRewards[_referrer] = (referralRewards[_referrer]).add(stakingTax);
         } 
         //register user
-        stakeholders[msg.sender].registered = true;
+        registered[msg.sender] = true;
         //mark the transaction date
-        stakeholders[msg.sender].lastClock = now;
+        lastClock[msg.sender] = now;
         //update the total staked LEAD amount in the pool
         totalStaked = totalStaked.add(finalAmount).sub(stakingTax);
         //update the user's stakes deducting the staking tax
-        stakeholders[msg.sender].stakes = (stakeholders[msg.sender].stakes).add(finalAmount).sub(stakingTax);
+        stakes[msg.sender] = (stakes[msg.sender]).add(finalAmount).sub(stakingTax);
         //emit event
         emit OnRegisterAndStake(msg.sender, _amount, registrationTax.add(stakingTax), _referrer);
     }
@@ -186,9 +182,9 @@ contract LeadStake is Owned {
     //calculates stakeholders latest unclaimed earnings 
     function calculateEarnings(address _stakeholder) public view returns(uint) {
         //records the number of days between the last payout time and now
-        uint activeDays = (now.sub(stakeholders[_stakeholder].lastClock)).div(86400);
+        uint activeDays = (now.sub(lastClock[_stakeholder])).div(86400);
         //returns earnings based on daily ROI and active days
-        return ((stakeholders[_stakeholder].stakes).mul(dailyROI).mul(activeDays)).div(10000);
+        return ((stakes[_stakeholder]).mul(dailyROI).mul(activeDays)).div(10000);
     }
     
     /**
@@ -212,13 +208,13 @@ contract LeadStake is Owned {
         //update the total staked LEAD amount in the pool
         totalStaked = totalStaked.add(afterTax);
         //adds earnings current earnings to stakeRewards
-        stakeholders[msg.sender].stakeRewards = (stakeholders[msg.sender].stakeRewards).add(calculateEarnings(msg.sender));
+        stakeRewards[msg.sender] = (stakeRewards[msg.sender]).add(calculateEarnings(msg.sender));
         //calculates unpaid period
-        uint remainder = (now.sub(stakeholders[msg.sender].lastClock)).mod(86400);
+        uint remainder = (now.sub(lastClock[msg.sender])).mod(86400);
         //mark transaction date with remainder
-        stakeholders[msg.sender].lastClock = now.sub(remainder);
+        lastClock[msg.sender] = now.sub(remainder);
         //updates stakeholder's stakes
-        stakeholders[msg.sender].stakes = (stakeholders[msg.sender].stakes).add(afterTax);
+        stakes[msg.sender] = (stakes[msg.sender]).add(afterTax);
         //emit event
         emit OnStake(msg.sender, afterTax, stakingTax);
     }
@@ -233,27 +229,27 @@ contract LeadStake is Owned {
      */
     function unstake(uint _amount) external onlyRegistered() {
         //makes sure _amount is not more than stake balance
-        require(_amount <= stakeholders[msg.sender].stakes && _amount > 0, 'Insufficient balance to unstake');
+        require(_amount <= stakes[msg.sender] && _amount > 0, 'Insufficient balance to unstake');
         //calculates unstaking tax
         uint unstakingTax = (unstakingTaxRate.mul(_amount)).div(1000);
         //calculates amount after tax
         uint afterTax = _amount.sub(unstakingTax);
         //sums up stakeholder's total rewards with _amount deducting unstaking tax
-        stakeholders[msg.sender].stakeRewards = (stakeholders[msg.sender].stakeRewards).add(calculateEarnings(msg.sender));
+        stakeRewards[msg.sender] = (stakeRewards[msg.sender]).add(calculateEarnings(msg.sender));
         //updates stakes
-        stakeholders[msg.sender].stakes = (stakeholders[msg.sender].stakes).sub(_amount);
+        stakes[msg.sender] = (stakes[msg.sender]).sub(_amount);
         //calculates unpaid period
-        uint remainder = (now.sub(stakeholders[msg.sender].lastClock)).mod(86400);
+        uint remainder = (now.sub(lastClock[msg.sender])).mod(86400);
         //mark transaction date with remainder
-        stakeholders[msg.sender].lastClock = now.sub(remainder);
+        lastClock[msg.sender] = now.sub(remainder);
         //update the total staked LEAD amount in the pool
         totalStaked = totalStaked.sub(_amount);
         //transfers value to stakeholder
         IERC20(lead).transfer(msg.sender, afterTax);
         //conditional statement if stakeholder has no stake left
-        if(stakeholders[msg.sender].stakes == 0) {
+        if(stakes[msg.sender] == 0) {
             //deregister stakeholder
-            stakeholders[msg.sender].registered = false;
+            registered[msg.sender] = false;
         }
         //emit event
         emit OnUnstake(msg.sender, _amount, unstakingTax);
@@ -262,21 +258,21 @@ contract LeadStake is Owned {
     //transfers total active earnings to stakeholder's wallet
     function withdrawEarnings() external returns (bool success) {
         //calculates the total redeemable rewards
-        uint totalReward = (stakeholders[msg.sender].referralRewards).add(stakeholders[msg.sender].stakeRewards).add(calculateEarnings(msg.sender));
+        uint totalReward = (referralRewards[msg.sender]).add(stakeRewards[msg.sender]).add(calculateEarnings(msg.sender));
         //makes sure user has rewards to withdraw before execution
         require(totalReward > 0, 'No reward to withdraw'); 
         //makes sure _amount is not more than required balance
         require((IERC20(lead).balanceOf(address(this))).sub(totalStaked) >= totalReward, 'Insufficient LEAD balance in pool');
         //initializes stake rewards
-        stakeholders[msg.sender].stakeRewards = 0;
+        stakeRewards[msg.sender] = 0;
         //initializes referal rewards
-        stakeholders[msg.sender].referralRewards = 0;
+        referralRewards[msg.sender] = 0;
         //initializes referral count
-        stakeholders[msg.sender].referralCount = 0;
+        referralCount[msg.sender] = 0;
         //calculates unpaid period
-        uint remainder = (now.sub(stakeholders[msg.sender].lastClock)).mod(86400);
+        uint remainder = (now.sub(lastClock[msg.sender])).mod(86400);
         //mark transaction date with remainder
-        stakeholders[msg.sender].lastClock = now.sub(remainder);
+        lastClock[msg.sender] = now.sub(remainder);
         //transfers total rewards to stakeholder
         IERC20(lead).transfer(msg.sender, totalReward);
         //emit event

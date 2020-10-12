@@ -34,23 +34,23 @@ contract('LeadStake', (accounts) => {
         await leadStake.registerAndStake(1200, '0x0000000000000000000000000000000000000000', {from: stakeholder1});
         await erc20.approve(leadStake.address, 2000, {from: stakeholder2});
         await leadStake.registerAndStake(2000, stakeholder1, {from: stakeholder2});
-        const status1 = await leadStake.stakeholders(stakeholder1);
-        const status2 = await leadStake.stakeholders(stakeholder2);
-        const referralCount1 = await leadStake.stakeholders(stakeholder1);
-        const referralCount3 = await leadStake.stakeholders(stakeholder3);
-        const referralBonus1 = await leadStake.stakeholders(stakeholder1);
-        const referralBonus3 = await leadStake.stakeholders(stakeholder3);
-        const stakes1 = await leadStake.stakeholders(stakeholder1);
-        const stakes2 = await leadStake.stakeholders(stakeholder2);
+        const status1 = await leadStake.registered(stakeholder1);
+        const status2 = await leadStake.registered(stakeholder2);
+        const referralCount1 = await leadStake.referralCount(stakeholder1);
+        const referralCount3 = await leadStake.referralCount(stakeholder3);
+        const referralBonus1 = await leadStake.referralRewards(stakeholder1);
+        const referralBonus3 = await leadStake.referralRewards(stakeholder3);
+        const stakes1 = await leadStake.stakes(stakeholder1);
+        const stakes2 = await leadStake.stakes(stakeholder2);
         const totalStaked = await leadStake.totalStaked();
-        assert.equal(status1[5], true);
-        assert.equal(status2[5], true);
-        assert.equal(referralCount1[1].toNumber(), 1);
-        assert.equal(referralCount3[1].toNumber(), 0);
-        assert.equal(referralBonus1[2].toNumber(), 36);
-        assert.equal(referralBonus3[2].toNumber(), 0);
-        assert.equal(stakes1[0].toNumber(), 980);
-        assert.equal(stakes2[0].toNumber(), 1764);
+        assert.equal(status1, true);
+        assert.equal(status2, true);
+        assert.equal(referralCount1.toNumber(), 1);
+        assert.equal(referralCount3.toNumber(), 0);
+        assert.equal(referralBonus1.toNumber(), 36);
+        assert.equal(referralBonus3.toNumber(), 0);
+        assert.equal(stakes1.toNumber(), 980);
+        assert.equal(stakes2.toNumber(), 1764);
         assert.equal(totalStaked.toNumber(), 2744);
         
     });
@@ -92,11 +92,11 @@ contract('LeadStake', (accounts) => {
     it('Should create a stake properly', async () => {
         await erc20.approve(leadStake.address, 1000, {from: stakeholder1});
         await leadStake.stake(1000, {from: stakeholder1});
-        const stakes = await leadStake.stakeholders(stakeholder1);
-        const stakeRewards = await leadStake.stakeholders(stakeholder1);
+        const stakes = await leadStake.stakes(stakeholder1);
+        const stakeRewards = await leadStake.stakeRewards(stakeholder1);
         const totalStaked = await leadStake.totalStaked();
-        assert.equal(stakes[0].toNumber(), 1960);
-        assert.equal(stakeRewards[3].toNumber(), 27);
+        assert.equal(stakes.toNumber(), 1960);
+        assert.equal(stakeRewards.toNumber(), 27);
         assert.equal(totalStaked.toNumber(), 3724);
     });
 
@@ -118,16 +118,16 @@ contract('LeadStake', (accounts) => {
     it('Should unstake properly', async () => {
         await time.increase(604800);
         await leadStake.unstake(980, {from: stakeholder1});
-        const stakes = await leadStake.stakeholders(stakeholder1);
-        const stakeRewards = await leadStake.stakeholders(stakeholder1);
-        const referralRewards = await leadStake.stakeholders(stakeholder1);
-        const referralCount = await leadStake.stakeholders(stakeholder1);
+        const stakes = await leadStake.stakes(stakeholder1);
+        const stakeRewards = await leadStake.stakeRewards(stakeholder1);
+        const referralRewards = await leadStake.referralRewards(stakeholder1);
+        const referralCount = await leadStake.referralCount(stakeholder1);
         const totalStaked = await leadStake.totalStaked();
         const balance = await erc20.balanceOf(stakeholder1);
-        assert.equal(stakes[0].toNumber(), 980);
-        assert.equal(stakeRewards[3].toNumber(), 136);
-        assert.equal(referralRewards[2].toNumber(), 36);
-        assert.equal(referralCount[1].toNumber(), 1);
+        assert.equal(stakes.toNumber(), 980);
+        assert.equal(stakeRewards.toNumber(), 136);
+        assert.equal(referralRewards.toNumber(), 36);
+        assert.equal(referralCount.toNumber(), 1);
         assert.equal(totalStaked.toNumber(), 2744);
         assert.equal(balance.toNumber(), 8741);
     });
@@ -135,16 +135,16 @@ contract('LeadStake', (accounts) => {
     it('Should deregister stakeholder who unstakes total stakes', async () => {
         await time.increase(604800);
         await leadStake.unstake(980, {from: stakeholder1});
-        const stakes = await leadStake.stakeholders(stakeholder1);
-        const referralRewards = await leadStake.stakeholders(stakeholder1);
-        const referralCount = await leadStake.stakeholders(stakeholder1);
+        const stakes = await leadStake.stakes(stakeholder1);
+        const referralRewards = await leadStake.referralRewards(stakeholder1);
+        const referralCount = await leadStake.referralCount(stakeholder1);
         const totalStaked = await leadStake.totalStaked();
-        const status = await leadStake.stakeholders(stakeholder1);
+        const status = await leadStake.registered(stakeholder1);
         
-        assert.equal(status[5], false);
-        assert.equal(stakes[0].toNumber(), 0);
-        assert.equal(referralRewards[2].toNumber(), 36);
-        assert.equal(referralCount[1].toNumber(), 1);
+        assert.equal(status, false);
+        assert.equal(stakes.toNumber(), 0);
+        assert.equal(referralRewards.toNumber(), 36);
+        assert.equal(referralCount.toNumber(), 1);
         assert.equal(totalStaked.toNumber(), 1764);    
     });
 
@@ -158,13 +158,13 @@ contract('LeadStake', (accounts) => {
     it('Should withdraw properly', async () => {
         await time.increase(690200);
         await leadStake.withdrawEarnings({from: stakeholder2});
-        const stakeRewards = await leadStake.stakeholders(stakeholder2);
-        const referralRewards = await leadStake.stakeholders(stakeholder2);
-        const referralCount = await leadStake.stakeholders(stakeholder2);
+        const stakeRewards = await leadStake.stakeRewards(stakeholder2);
+        const referralRewards = await leadStake.referralRewards(stakeholder2);
+        const referralCount = await leadStake.referralCount(stakeholder2);
         const balance = await erc20.balanceOf(stakeholder2)
-        assert.equal(stakeRewards[3].toNumber(), 0);
-        assert.equal(referralRewards[2].toNumber(), 0);
-        assert.equal(referralCount[1].toNumber(), 0);
+        assert.equal(stakeRewards.toNumber(), 0);
+        assert.equal(referralRewards.toNumber(), 0);
+        assert.equal(referralCount.toNumber(), 0);
         assert.equal(balance.toNumber(), 8246);
 
        await time.increase(89400);
